@@ -1,0 +1,981 @@
+import React, { useMemo, useState, useRef } from "react";
+import { CalendarDays, CheckCircle2, ChevronRight, Clock, Inbox, ListChecks, Mic, Pause, Play, Sparkles, Timer, Zap, Plus, Search, Users, X, LayoutDashboard, FileText, Trash2, Save, Bold, Italic, List as ListIcon, ListOrdered, CheckSquare, Heading1, Heading2, Quote, Target, Upload, BookOpen, ArrowLeft, ArrowRight, Shuffle } from "lucide-react";
+
+const Chip = ({ children }) => (
+  <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium text-zinc-700 border-zinc-200 bg-white/60 backdrop-blur">
+    {children}
+  </span>
+);
+
+const Button = ({ children, className = "", variant = "primary", ...props }) => {
+  const base = "inline-flex items-center gap-2 rounded-2xl px-3.5 py-2 text-sm font-medium transition active:scale-[.98]";
+  const styles = {
+    primary: "bg-zinc-900 text-white hover:bg-zinc-800 shadow-sm",
+    subtle: "bg-white text-zinc-800 border border-zinc-200 hover:bg-zinc-50",
+    ghost: "text-zinc-700 hover:bg-zinc-100",
+    success: "bg-emerald-600 text-white hover:bg-emerald-500",
+    danger: "bg-rose-600 text-white hover:bg-rose-500",
+  };
+  return (
+    <button className={`${base} ${styles[variant]} ${className}`} {...props}>
+      {children}
+    </button>
+  );
+};
+
+const Card = ({ title, action, children, className = "" }) => (
+  <div className={`rounded-3xl border border-zinc-200 bg-white shadow-sm ${className}`}>
+    <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-zinc-100">
+      <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
+      <div className="flex items-center gap-2">{action}</div>
+    </div>
+    <div className="p-4 sm:p-5">{children}</div>
+  </div>
+);
+
+const CapacityBar = ({ value = 70 }) => (
+  <div>
+    <div className="flex items-center justify-between text-xs text-zinc-600 mb-1">
+      <span>Capacity</span>
+      <span>{value}% booked</span>
+    </div>
+    <div className="h-3 w-full rounded-full bg-zinc-100 overflow-hidden">
+      <div className={`h-full ${value < 85 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${Math.min(value, 100)}%` }} />
+    </div>
+  </div>
+);
+
+const mockTimeline = [
+  { label: "Class", time: "9:00–10:20" },
+  { label: "Lift", time: "11:00–12:00" },
+  { label: "Study", time: "13:00–14:00" },
+  { label: "Work", time: "16:00–18:00" },
+];
+
+const initialTasks = [
+  { id: 1, title: "COMM370 – turn lecture notes into study guide", duration: 25, energy: "solo/quiet", course: "COMM370", due: "Nov 7", status: "next" },
+  { id: 2, title: "ECON – problem set #4 Q1–3", duration: 45, energy: "deep focus", course: "ECON251", due: "Nov 6", status: "queued" },
+  { id: 3, title: "Email Prof. Frid about office hours", duration: 10, energy: "admin", course: "ENTR", due: "Today", status: "queued" },
+];
+
+export default function ADHDWorkspaceMock() {
+  const [sidebarTab, setSidebarTab] = useState("today");
+  const [tasks, setTasks] = useState(initialTasks);
+  const [inbox, setInbox] = useState([
+    { id: "in-1", raw: "Screenshot: Syllabus.pdf – COMM370 deadlines" },
+    { id: "in-2", raw: "Voice: ‘study chapter 7, 10 flashcards’" },
+  ]);
+  const [captureText, setCaptureText] = useState("");
+  const [isFocusing, setIsFocusing] = useState(false);
+  const [focusMins, setFocusMins] = useState(25);
+  const [nowTaskId, setNowTaskId] = useState(1);
+  const [focusTotal, setFocusTotal] = useState(0);
+  const [focusLeft, setFocusLeft] = useState(0);
+  const timerRef = useRef(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarInteracted, setSidebarInteracted] = useState(false);
+  const [notes, setNotes] = useState([
+    { id: "n-1", title: "COMM370 – Lecture 5", content: "# Media & Culture\n\n- Encoding/decoding\n- Power of representation\n1. Framing effects\n2. Agenda setting\n- [ ] Make flashcards\n", updatedAt: Date.now() },
+    { id: "n-2", title: "Entrepreneurial Strategy – Timing", content: "## Chapter 12 Timing\n- Monaco vs bike race metaphor\n- Fast followers vs pioneers\nKey takeaway: ship the lean version.", updatedAt: Date.now() },
+  ]);
+  const [selectedNoteId, setSelectedNoteId] = useState("n-1");
+  const [noteSearch, setNoteSearch] = useState("");
+  const filteredNotes = useMemo(() => notes.filter(n => n.title.toLowerCase().includes(noteSearch.toLowerCase())), [notes, noteSearch]);
+  const nextUp = useMemo(() => tasks.find(t => t.status === "next") || tasks[0], [tasks]);
+
+  const addCapture = () => {
+    if (!captureText.trim()) return;
+    setInbox([{ id: `in-${Math.random().toString(36).slice(2, 7)}`, raw: captureText }, ...inbox]);
+    setCaptureText("");
+  };
+
+  const clarifyItem = (item) => {
+    const newId = (tasks.length ? Math.max(...tasks.map(t => t.id)) : 0) + 1;
+    const newTask = {
+      id: newId,
+      title: item.raw.replace(/^Voice:\s*/i, "").replace(/^Screenshot:\s*/i, "").slice(0, 60),
+      duration: 25,
+      energy: "solo/quiet",
+      course: "General",
+      due: "Nov 8",
+      status: "queued",
+      steps: ["Skim materials (5m)", "Outline key points (10m)", "Draft output (10m)"],
+    };
+    setTasks([newTask, ...tasks]);
+    setInbox(inbox.filter(x => x.id !== item.id));
+  };
+
+  const formatTime = (sec) => {
+    const m = Math.floor(Math.max(0, sec) / 60);
+    const s = Math.max(0, sec) % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const startFocus = () => {
+    if (timerRef.current) return;
+    const total = Math.max(1, Math.round(focusMins * 60));
+    setFocusTotal(total);
+    setFocusLeft(total);
+    setIsFocusing(true);
+    timerRef.current = setInterval(() => {
+      setFocusLeft((l) => {
+        if (l <= 1) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          setIsFocusing(false);
+          return 0;
+        }
+        return l - 1;
+      });
+    }, 1000);
+  };
+
+  const pauseFocus = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsFocusing(false);
+  };
+
+  const resetFocus = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsFocusing(false);
+    setFocusLeft(0);
+    setFocusTotal(0);
+  };
+
+  const completeFocus = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsFocusing(false);
+    setFocusLeft(0);
+  };
+
+  const setAsNext = (id) => {
+    setTasks(ts => ts.map(t => ({ ...t, status: t.id === id ? "next" : t.status === "next" ? "queued" : t.status })));
+    setNowTaskId(id);
+  };
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [recError, setRecError] = useState("");
+  const [lastAudioURL, setLastAudioURL] = useState("");
+  const recRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const fileInputRef = useRef(null);
+
+  const startRecording = async () => {
+    if (isRecording) return;
+    setRecError("");
+    try {
+      if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+        setRecError("Mic not supported");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        chunksRef.current = [];
+        const url = URL.createObjectURL(blob);
+        setLastAudioURL(url);
+        const id = `n-${Math.random().toString(36).slice(2, 7)}`;
+        const ts = new Date();
+        const title = `Lecture summary – ${ts.toLocaleString()}`;
+        const content = `# Lecture Summary\n\n- Topic overview:\n- Key concepts:\n- Examples mentioned:\n\n## Takeaways\n- \n\n## Action items\n- [ ] Review slides\n- [ ] Create 10 flashcards\n\n---\nAudio: ${url}`;
+        const newNote = { id, title, content, updatedAt: Date.now() };
+        setNotes((ns) => [newNote, ...ns]);
+        setSelectedNoteId(id);
+        setSidebarTab("notes");
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setIsRecording(true);
+      setRecSeconds(0);
+      recRef.current = setInterval(() => setRecSeconds((s) => s + 1), 1000);
+    } catch (err) {
+      setRecError("Mic permission denied");
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    }
+  };
+
+  const stopAndSummarize = () => {
+    if (recRef.current) {
+      clearInterval(recRef.current);
+      recRef.current = null;
+    }
+    setIsRecording(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
+  const cancelRecording = () => {
+    if (recRef.current) {
+      clearInterval(recRef.current);
+      recRef.current = null;
+    }
+    setIsRecording(false);
+    chunksRef.current = [];
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    setRecSeconds(0);
+  };
+
+  const triggerUpload = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const onAudioPicked = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setLastAudioURL(url);
+    const id = `n-${Math.random().toString(36).slice(2, 7)}`;
+    const ts = new Date();
+    const title = `Uploaded audio – ${ts.toLocaleString()}`;
+    const content = `# Lecture Summary\n\n- Topic overview:\n- Key concepts:\n- Examples mentioned:\n\n## Takeaways\n- \n\n## Action items\n- [ ] Review slides\n- [ ] Create 10 flashcards\n\n---\nAudio: ${url}`;
+    const newNote = { id, title, content, updatedAt: Date.now() };
+    setNotes((ns) => [newNote, ...ns]);
+    setSelectedNoteId(id);
+    setSidebarTab("notes");
+    if (e.target) e.target.value = "";
+  };
+
+  const noteTextRef = useRef(null);
+  const selectedNote = useMemo(() => notes.find((n) => n.id === selectedNoteId), [notes, selectedNoteId]);
+  const setContent = (val) => selectedNote && setNotes((ns) => ns.map((n) => (n.id === selectedNote.id ? { ...n, content: val, updatedAt: Date.now() } : n)));
+
+  const wrapSelection = (prefix, suffix = prefix) => {
+    const ta = noteTextRef.current;
+    if (!ta || !selectedNote) return;
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const v = ta.value;
+    const before = v.slice(0, s);
+    const sel = v.slice(s, e);
+    const after = v.slice(e);
+    const next = before + prefix + sel + suffix + after;
+    setContent(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = s + prefix.length;
+      ta.selectionEnd = e + prefix.length;
+    });
+  };
+
+  const toggleLinePrefix = (prefix) => {
+    const ta = noteTextRef.current;
+    if (!ta || !selectedNote) return;
+    const pos = ta.selectionStart;
+    const v = ta.value;
+    const lineStart = v.lastIndexOf("\n", pos - 1) + 1;
+    const lineEndIndex = v.indexOf("\n", pos);
+    const end = lineEndIndex === -1 ? v.length : lineEndIndex;
+    const line = v.slice(lineStart, end);
+    const nextLine = line.startsWith(prefix) ? line.slice(prefix.length) : prefix + line;
+    const next = v.slice(0, lineStart) + nextLine + v.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const cursor = Math.min(lineStart + nextLine.length, next.length);
+      ta.selectionStart = ta.selectionEnd = cursor;
+    });
+  };
+
+  const handleNoteKeyDown = (e) => {
+    const ta = noteTextRef.current;
+    if (!ta || !selectedNote) return;
+    const v = ta.value;
+    const pos = ta.selectionStart;
+    const lineStart = v.lastIndexOf("\n", pos - 1) + 1;
+    const lineEndIndex = v.indexOf("\n", pos);
+    const end = lineEndIndex === -1 ? v.length : lineEndIndex;
+    const line = v.slice(lineStart, end);
+
+    if (e.key === "Enter") {
+      const bullet = /^(\s*)(- |\* |- \[ \] |- \[x\] )/.exec(line);
+      const num = /^(\s*)(\d+)\.\s/.exec(line);
+      if (bullet) {
+        e.preventDefault();
+        const prefix = bullet[1] + (/- \[[ x]\] /.test(bullet[0]) ? "- [ ] " : "- ");
+        const isEmpty = line.trim() === bullet[0].trim();
+        const insert = isEmpty ? "\n" : "\n" + prefix;
+        const next = v.slice(0, end) + insert + v.slice(end);
+        const newPos = end + insert.length;
+        setContent(next);
+        requestAnimationFrame(() => {
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = newPos;
+        });
+        return;
+      } else if (num) {
+        e.preventDefault();
+        const current = parseInt(num[2], 10) || 1;
+        const prefix = num[1] + (current + 1) + ". ";
+        const isEmpty = line.trim() === num[2] + ".";
+        const insert = isEmpty ? "\n" : "\n" + prefix;
+        const next = v.slice(0, end) + insert + v.slice(end);
+        const newPos = end + insert.length;
+        setContent(next);
+        requestAnimationFrame(() => {
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = newPos;
+        });
+        return;
+      }
+    }
+
+    if (e.key === "Backspace") {
+      if (pos === lineStart) {
+        const bulletPrefix = /^(\s*)(- |\* |- \[ \] |- \[x\] |\d+\.\s)/.exec(line);
+        if (bulletPrefix) {
+          e.preventDefault();
+          const nextLine = line.replace(bulletPrefix[0], "");
+          const next = v.slice(0, lineStart) + nextLine + v.slice(end);
+          setContent(next);
+          requestAnimationFrame(() => {
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = lineStart;
+          });
+          return;
+        }
+      }
+    }
+
+    if (e.key === "Tab") {
+      const listPrefix = /^(\s*)(- |\* |- \[ \] |- \[x\] |\d+\.\s)/;
+      if (listPrefix.test(line)) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          const nextLine = line.startsWith("  ") ? line.slice(2) : line;
+          const next = v.slice(0, lineStart) + nextLine + v.slice(end);
+          setContent(next);
+          requestAnimationFrame(() => {
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = Math.max(pos - 2, lineStart);
+          });
+        } else {
+          const nextLine = "  " + line;
+          const next = v.slice(0, lineStart) + nextLine + v.slice(end);
+          setContent(next);
+          requestAnimationFrame(() => {
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = pos + 2;
+          });
+        }
+      }
+    }
+  };
+
+  const toggleTaskLine = (lineIndex) => {
+    if (!selectedNote) return;
+    const lines = selectedNote.content.split("\n");
+    const line = lines[lineIndex] || "";
+    if (/^- \[ \] /.test(line)) lines[lineIndex] = line.replace("- [ ] ", "- [x] ");
+    else if (/^- \[x\] /.test(line)) lines[lineIndex] = line.replace("- [x] ", "- [ ] ");
+    else return;
+    setContent(lines.join("\n"));
+  };
+
+  const renderInline = (t) => {
+    const out = [];
+    let i = 0;
+    let buf = "";
+    const flush = () => {
+      if (buf) {
+        out.push(buf);
+        buf = "";
+      }
+    };
+    while (i < t.length) {
+      if (t[i] === "*" && t[i + 1] === "*") {
+        const end = t.indexOf("**", i + 2);
+        if (end !== -1) {
+          flush();
+          out.push(
+            <span key={out.length} className="font-semibold">
+              {t.slice(i + 2, end)}
+            </span>
+          );
+          i = end + 2;
+          continue;
+        }
+      }
+      if (t[i] === "*") {
+        const end = t.indexOf("*", i + 1);
+        if (end !== -1) {
+          flush();
+          out.push(
+            <span key={out.length} className="italic">
+              {t.slice(i + 1, end)}
+            </span>
+          );
+          i = end + 1;
+          continue;
+        }
+      }
+      buf += t[i];
+      i++;
+    }
+    if (buf) out.push(buf);
+    return out;
+  };
+
+  const NotePreview = ({ content, onToggleTask }) => {
+    const lines = content.split("\n");
+    const stack = [];
+    const nodes = [];
+    const makeNode = (type, indent) => ({ type, indent, items: [] });
+    const getParent = (indent, type) => {
+      while (stack.length && stack[stack.length - 1].indent > indent) stack.pop();
+      const top = stack[stack.length - 1];
+      if (!top || top.type !== type || top.indent !== indent) {
+        const node = makeNode(type, indent);
+        nodes.push(node);
+        stack.push(node);
+        return node;
+      }
+      return top;
+    };
+    const nodesPush = (n) => {
+      nodes.push(n);
+      while (stack.length) stack.pop();
+    };
+    lines.forEach((raw, idx) => {
+      const mTask = raw.match(/^(\s*)- \[( |x)\] (.*)$/);
+      const mBul = raw.match(/^(\s*)(- |\*) (.*)$/);
+      const mNum = raw.match(/^(\s*)(\d+)\.\s(.*)$/);
+      const mH1 = raw.match(/^# (.*)$/);
+      const mH2 = raw.match(/^## (.*)$/);
+      const mQuote = raw.match(/^(\s*)> (.*)$/);
+      if (mH1) {
+        nodesPush({ kind: "h1", text: mH1[1] });
+        return;
+      }
+      if (mH2) {
+        nodesPush({ kind: "h2", text: mH2[1] });
+        return;
+      }
+      if (mQuote) {
+        nodesPush({ kind: "quote", text: mQuote[2] });
+        return;
+      }
+      if (mTask) {
+        const indent = Math.floor((mTask[1] || "").length / 2);
+        const parent = getParent(indent, "ul");
+        parent.items.push({ kind: "task", checked: mTask[2] === "x", text: mTask[3], lineIndex: idx });
+        return;
+      }
+      if (mBul) {
+        const indent = Math.floor((mBul[1] || "").length / 2);
+        const parent = getParent(indent, "ul");
+        parent.items.push({ kind: "li", text: mBul[3] });
+        return;
+      }
+      if (mNum) {
+        const indent = Math.floor((mNum[1] || "").length / 2);
+        const parent = getParent(indent, "ol");
+        parent.items.push({ kind: "li", text: mNum[3] });
+        return;
+      }
+      if (raw.trim().length === 0) {
+        nodesPush({ kind: "spacer" });
+        return;
+      }
+      nodesPush({ kind: "p", text: raw });
+    });
+    const renderList = (node, i) => {
+      const Tag = node.type === "ol" ? "ol" : "ul";
+      return (
+        <Tag key={`list-${i}`} className="ml-5 space-y-1 list-inside">
+          {node.items.map((it, j) => {
+            if (it.kind === "task")
+              return (
+                <li key={`task-${i}-${j}`} className="list-none">
+                  <label className="inline-flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" className="mt-1" checked={it.checked} onChange={() => onToggleTask(it.lineIndex)} />
+                    <span className={`text-sm ${it.checked ? "line-through text-zinc-500" : ""}`}>{renderInline(it.text)}</span>
+                  </label>
+                </li>
+              );
+            return (
+              <li key={`li-${i}-${j}`} className={node.type === "ol" ? "list-decimal" : "list-disc"}>
+                {renderInline(it.text)}
+              </li>
+            );
+          })}
+        </Tag>
+      );
+    };
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 space-y-2">
+        {nodes.map((n, i) => {
+          if (n.type) return renderList(n, i);
+          if (n.kind === "h1") return <div key={i} className="text-lg font-semibold">{renderInline(n.text)}</div>;
+          if (n.kind === "h2") return <div key={i} className="text-base font-semibold">{renderInline(n.text)}</div>;
+          if (n.kind === "quote") return <div key={i} className="border-l-4 pl-3 text-zinc-700">{renderInline(n.text)}</div>;
+          if (n.kind === "spacer") return <div key={i} className="h-2" />;
+          return <div key={i} className="text-sm">{renderInline(n.text)}</div>;
+        })}
+      </div>
+    );
+  };
+
+  const radius = 56;
+  const circumference = 2 * Math.PI * radius;
+  const progress = focusTotal > 0 ? (focusTotal - focusLeft) / focusTotal : 0;
+  const dashOffset = circumference * (1 - progress);
+  const displaySeconds = isFocusing ? focusLeft : focusTotal > 0 && focusLeft === 0 ? 0 : Math.round(focusMins * 60);
+
+  const [flashSourceId, setFlashSourceId] = useState("n-1");
+  const [flashcards, setFlashcards] = useState([]);
+  const [flashIndex, setFlashIndex] = useState(0);
+  const [showAnswer, setShowAnswer] = useState(false);
+
+  const generateFlashcardsFromText = (txt) => {
+    const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const qa = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^#+\s/.test(line)) {
+        const q = line.replace(/^#+\s*/, "");
+        const a = (lines[i + 1] && !/^#+\s/.test(lines[i + 1])) ? lines[i + 1] : "";
+        qa.push({ q, a });
+      } else if (/^(\d+\.|- |\*)\s/.test(line)) {
+        const parts = line.replace(/^(\d+\.|- |\*)\s*/, "").split(":");
+        if (parts.length >= 2) qa.push({ q: parts[0].trim(), a: parts.slice(1).join(":").trim() });
+        else qa.push({ q: `Explain: ${parts[0].trim()}`, a: "" });
+      }
+    }
+    if (qa.length === 0 && txt) qa.push({ q: "Summarize this note", a: txt.slice(0, 140) + (txt.length > 140 ? "…" : "") });
+    return qa;
+  };
+
+  const handleGenerateFlashcards = () => {
+    const src = notes.find(n => n.id === flashSourceId) || selectedNote;
+    const list = generateFlashcardsFromText(src?.content || "");
+    setFlashcards(list);
+    setFlashIndex(0);
+    setShowAnswer(false);
+  };
+
+  const shuffleFlashcards = () => {
+    const arr = [...flashcards];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    setFlashcards(arr);
+    setFlashIndex(0);
+    setShowAnswer(false);
+  };
+
+  const exportFlashcardsToNote = () => {
+    if (!flashcards.length) return;
+    const id = `n-${Math.random().toString(36).slice(2, 7)}`;
+    const title = `Flashcards – ${new Date().toLocaleString()}`;
+    const content = flashcards.map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a || ""}`).join("\n\n");
+    const newNote = { id, title, content, updatedAt: Date.now() };
+    setNotes(ns => [newNote, ...ns]);
+    setSelectedNoteId(id);
+    setSidebarTab("notes");
+  };
+
+  return (
+    <div className="min-h-screen w-full bg-gradient-to-b from-zinc-50 to-white text-zinc-900">
+      <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center gap-3">
+          <div className="flex items-center gap-2 font-semibold">
+            <LayoutDashboard className="h-5 w-5" />
+            <span>FocusLab</span>
+          </div>
+          <div className="ml-4 flex-1 max-w-xl">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <input placeholder="Quick find… (⌘K)" className="w-full rounded-2xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-zinc-300" />
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-2">
+            <Chip>Wed, Nov 5</Chip>
+            <Chip>America/Chicago</Chip>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-4 py-4">
+        <aside className={`col-span-12 ${sidebarCollapsed ? "md:col-span-1" : "md:col-span-2"}`}>
+          <nav className="sticky top-20 flex md:block gap-2 md:gap-0" onMouseEnter={() => setSidebarCollapsed(false)} onMouseLeave={() => sidebarInteracted && setSidebarCollapsed(true)}>
+            {[
+              { id: "today", label: "Today", icon: CalendarDays },
+              { id: "notes", label: "Notes", icon: FileText },
+              { id: "inbox", label: "Inbox", icon: Inbox },
+              { id: "focus", label: "Focus", icon: Target },
+              { id: "rooms", label: "Rooms", icon: Users },
+              { id: "tools", label: "Tools", icon: ListChecks },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => {
+                  setSidebarTab(id);
+                  setSidebarInteracted(true);
+                }}
+                className={`flex items-center ${sidebarCollapsed ? "justify-center" : "gap-3"} w-full md:mb-2 ${sidebarCollapsed ? "rounded-full p-2" : "rounded-2xl px-3.5 py-2"} text-sm border transition ${sidebarTab === id ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white hover:bg-zinc-50"}`}
+                title={label}
+              >
+                <Icon className="h-4 w-4" />
+                {!sidebarCollapsed && <span>{label}</span>}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <main className={`col-span-12 ${sidebarTab === "notes" ? (sidebarCollapsed ? "md:col-span-11" : "md:col-span-10") : (sidebarCollapsed ? "md:col-span-8" : "md:col-span-7")} flex flex-col gap-4`}>
+          {sidebarTab === "today" && (
+            <>
+              <Card title="Today Overview" action={<Chip><Clock className="h-3.5 w-3.5 mr-1" /> 6h free</Chip>}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2 space-y-3">
+                    <CapacityBar value={72} />
+                    <div className="flex flex-wrap gap-2">
+                      {mockTimeline.map((b, i) => (
+                        <Chip key={i}>{b.label} · {b.time}</Chip>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="sm:col-span-1">
+                    <div className="rounded-2xl border border-zinc-200 p-3 bg-zinc-50">
+                      <div className="text-xs text-zinc-600 mb-1">Next available block</div>
+                      <div className="text-sm font-medium">2:30–3:00 pm</div>
+                      <div className="mt-2">
+                        <Button variant="primary" className="w-full" onClick={() => setSidebarTab("focus")}>
+                          <Timer className="h-4 w-4" /> Start 25‑min block
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card title="Next Up" action={<Button variant="subtle" onClick={() => setSidebarTab("focus")}><Zap className="h-4 w-4" /> Focus now</Button>}>
+                {nextUp ? (
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="h-5 w-5 text-zinc-400 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-medium">{nextUp.title}</div>
+                      <div className="text-xs text-zinc-600 mt-0.5">{nextUp.course} • {nextUp.duration}m • Due {nextUp.due}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Chip>Energy: {nextUp.energy}</Chip>
+                        <Chip>Mode: Solo</Chip>
+                      </div>
+                    </div>
+                    <Button variant="subtle" onClick={startFocus}><Play className="h-4 w-4" /> Start</Button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-zinc-600">No task selected.</div>
+                )}
+              </Card>
+
+              <Card title="Today’s Plan">
+                <ul className="space-y-2">
+                  {tasks.map((t) => (
+                    <li key={t.id} className={`flex items-center gap-3 rounded-2xl border p-3 ${t.status === "next" ? "border-zinc-900 bg-zinc-900/5" : "border-zinc-200"}`}>
+                      <div className="w-10 shrink-0">
+                        <Chip>{t.duration}m</Chip>
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{t.title}</div>
+                        <div className="text-xs text-zinc-600">{t.course} • Due {t.due}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" onClick={() => setAsNext(t.id)}>
+                          <ChevronRight className="h-4 w-4" /> Set next
+                        </Button>
+                        <Button variant="subtle" onClick={() => setSidebarTab("focus")}>
+                          <Timer className="h-4 w-4" /> Time‑box
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </>
+          )}
+
+          {sidebarTab === "focus" && (
+            <Card title="Focus Timer" action={<Chip>{isFocusing ? "Running" : "Ready"}</Chip>}>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2">
+                  <div className="w-full flex items-center justify-center">
+                    <div className="relative h-48 w-48">
+                      <svg className="h-48 w-48 -rotate-90" viewBox="0 0 140 140">
+                        <circle cx="70" cy="70" r="56" fill="none" stroke="#e5e7eb" strokeWidth="10" />
+                        <circle cx="70" cy="70" r="56" fill="none" stroke="#111827" strokeWidth="10" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={dashOffset} />
+                      </svg>
+                      <div className="absolute inset-0 grid place-items-center"><div className="text-4xl font-semibold">{formatTime(displaySeconds)}</div></div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <Button variant="primary" onClick={startFocus}><Play className="h-4 w-4" /> Start</Button>
+                    <Button variant="danger" onClick={pauseFocus}><Pause className="h-4 w-4" /> Pause</Button>
+                    <Button variant="success" onClick={completeFocus}><CheckCircle2 className="h-4 w-4" /> Done</Button>
+                    <Button variant="subtle" onClick={resetFocus}><X className="h-4 w-4" /> Reset</Button>
+                  </div>
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="text-xs text-zinc-600 mb-2">Length</div>
+                  <div className="flex items-center gap-2 mb-3">
+                    {[15, 25, 45].map((min) => (
+                      <button key={min} onClick={() => setFocusMins(min)} className={`px-3 py-1.5 rounded-xl border text-sm ${focusMins === min ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white"}`}>
+                        {min} min
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-xs text-zinc-600 mb-2">Pick task</div>
+                  <select className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm" value={nowTaskId} onChange={(e) => setNowTaskId(Number(e.target.value))}>
+                    {tasks.map((t) => (
+                      <option key={t.id} value={t.id}>{t.title.slice(0, 60)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {sidebarTab === "notes" && (
+            <Card title="Notes" action={<div className="flex items-center gap-2"><input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes…" className="hidden sm:block rounded-xl border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-zinc-300" /><Button variant="subtle" onClick={() => { const id = `n-${Math.random().toString(36).slice(2, 7)}`; const newNote = { id, title: "Untitled note", content: "", updatedAt: Date.now() }; setNotes([newNote, ...notes]); setSelectedNoteId(id); }}><Plus className="h-4 w-4" /> New</Button></div>}>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-1">
+                  <div className="mb-2 sm:hidden">
+                    <input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes…" className="w-full rounded-XL border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300" />
+                  </div>
+                  <ul className="space-y-2 max-h-[420px] overflow-auto pr-1">
+                    {filteredNotes.map((n) => (
+                      <li key={n.id} className={`rounded-2xl border p-3 ${selectedNoteId === n.id ? "border-zinc-900 bg-zinc-900/5" : "border-zinc-200"}`}>
+                        <button onClick={() => setSelectedNoteId(n.id)} className="text-left w-full">
+                          <div className="text-sm font-medium truncate">{n.title}</div>
+                          <div className="text-[11px] text-zinc-600 mt-0.5">{new Date(n.updatedAt).toLocaleString()}</div>
+                        </button>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Button variant="ghost" onClick={() => {
+                            const next = notes.filter((x) => x.id !== n.id);
+                            setNotes(next);
+                            if (selectedNoteId === n.id) setSelectedNoteId(next[0]?.id || "");
+                          }}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="lg:col-span-2">
+                  {selectedNote ? (
+                    <div className="flex flex-col gap-2">
+                      <input value={selectedNote.title} onChange={(e) => setNotes((ns) => ns.map((x) => (x.id === selectedNote.id ? { ...x, title: e.target.value, updatedAt: Date.now() } : x)))} placeholder="Note title" className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300" />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Button variant="subtle" onClick={() => wrapSelection("**")} title="Bold"><Bold className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => wrapSelection("*")} title="Italic"><Italic className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("# ")} title="H1"><Heading1 className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("## ")} title="H2"><Heading2 className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("- ")} title="Bulleted list"><ListIcon className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("1. ")} title="Numbered list"><ListOrdered className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("- [ ] ")} title="Checkbox"><CheckSquare className="h-4 w-4" /></Button>
+                        <Button variant="subtle" onClick={() => toggleLinePrefix("> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
+                      </div>
+                      <NoteEditor noteTextRef={noteTextRef} value={selectedNote.content} onKeyDown={handleNoteKeyDown} onChange={(e) => setNotes((ns) => ns.map((x) => (x.id === selectedNote.id ? { ...x, content: e.target.value, updatedAt: Date.now() } : x)))} />
+                      <NotePreview content={selectedNote.content} onToggleTask={toggleTaskLine} />
+                      <div className="flex items-center gap-2">
+                        <Chip>Last edited {new Date(selectedNote.updatedAt).toLocaleTimeString()}</Chip>
+                        <Button variant="subtle"><Save className="h-4 w-4" /> Saved</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-zinc-600">No note selected. Create one to start typing.</div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {sidebarTab === "inbox" && (
+            <Card title="Capture Inbox" action={<Button variant="subtle" onClick={() => setInbox([])}><X className="h-4 w-4" /> Clear all</Button>}>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="relative flex-1">
+                  <input value={captureText} onChange={(e) => setCaptureText(e.target.value)} placeholder="Dump anything… (text, thoughts, ‘calc exam ch.7’, ‘buy lab goggles’)" className="w-full rounded-2xl border border-zinc-200 bg-white py-2.5 px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-300" />
+                  <Mic className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                </div>
+                <Button onClick={addCapture}><Plus className="h-4 w-4" /> Add</Button>
+              </div>
+              <ul className="space-y-3">
+                {inbox.map((item) => (
+                  <li key={item.id} className="rounded-2xl border border-zinc-200 p-3 flex items-start gap-3">
+                    <Sparkles className="h-4 w-4 mt-1 text-zinc-500" />
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium">{item.raw}</div>
+                      <div className="text-xs text-zinc-600 mt-0.5">Auto-tag: <em>General</em> • Suggest: 25‑min step</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="subtle" onClick={() => clarifyItem(item)}>
+                        <ListChecks className="h-4 w-4" /> Clarify → task
+                      </Button>
+                      <Button variant="ghost" onClick={() => setInbox(inbox.filter((x) => x.id !== item.id))}><X className="h-4 w-4" /></Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {sidebarTab === "tools" && (
+            <Card title="Tools – AI Features" action={<Chip>Beta</Chip>}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-zinc-200 p-4 bg-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">Speech‑to‑Text</div>
+                      <div className="text-xs text-zinc-600">Record lectures → organized notes</div>
+                    </div>
+                    <Chip>{isRecording ? `Recording ${Math.floor(recSeconds / 60)}:${(recSeconds % 60).toString().padStart(2, "0")}` : recError || "Idle"}</Chip>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    {!isRecording ? (
+                      <Button onClick={startRecording}><Mic className="h-4 w-4" /> Start Recording</Button>
+                    ) : (
+                      <Button variant="success" onClick={stopAndSummarize}><Save className="h-4 w-4" /> Stop & Summarize</Button>
+                    )}
+                    <Button variant="subtle" onClick={triggerUpload}><Upload className="h-4 w-4" /> Upload audio</Button>
+                    <input ref={fileInputRef} onChange={onAudioPicked} type="file" accept="audio/*" className="hidden" />
+                    {isRecording && (
+                      <Button variant="danger" onClick={cancelRecording}><X className="h-4 w-4" /> Cancel</Button>
+                    )}
+                  </div>
+                  {lastAudioURL && (
+                    <div className="mt-3">
+                      <audio src={lastAudioURL} controls className="w-full" />
+                    </div>
+                  )}
+                  <div className="mt-3 text-xs text-zinc-600">On stop, we auto‑generate a clean summary and add it to your Notes.</div>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 p-4 bg-white">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4" />
+                      <div className="text-sm font-medium">Flashcard Maker</div>
+                    </div>
+                    <Chip>{flashcards.length ? `${flashcards.length} cards` : "Idle"}</Chip>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="flex items-center gap-2">
+                      <select className="flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm" value={flashSourceId} onChange={(e) => setFlashSourceId(e.target.value)}>
+                        {notes.map((n) => (
+                          <option key={n.id} value={n.id}>{n.title.slice(0, 60)}</option>
+                        ))}
+                      </select>
+                      <Button variant="primary" onClick={handleGenerateFlashcards}><Sparkles className="h-4 w-4" /> Generate</Button>
+                      <Button variant="subtle" onClick={shuffleFlashcards}><Shuffle className="h-4 w-4" /> Shuffle</Button>
+                    </div>
+
+                    {flashcards.length > 0 && (
+                      <div className="mt-2">
+                        <div className="relative mx-auto max-w-md aspect-[4/3] rounded-2xl border border-zinc-200 bg-zinc-50 p-4 grid place-items-center text-center">
+                          <div className="text-xs text-zinc-500 absolute top-2 right-3">{flashIndex + 1}/{flashcards.length}</div>
+                          <div className="text-base font-medium mb-1">{showAnswer ? "Answer" : "Question"}</div>
+                          <div className="text-lg">{showAnswer ? flashcards[flashIndex].a || "(your answer here)" : flashcards[flashIndex].q}</div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-center gap-2">
+                          <Button variant="subtle" onClick={() => { setFlashIndex((i) => (i - 1 + flashcards.length) % flashcards.length); setShowAnswer(false); }}><ArrowLeft className="h-4 w-4" /> Prev</Button>
+                          <Button variant="primary" onClick={() => setShowAnswer((s) => !s)}>{showAnswer ? "Hide" : "Reveal"}</Button>
+                          <Button variant="subtle" onClick={() => { setFlashIndex((i) => (i + 1) % flashcards.length); setShowAnswer(false); }}>Next <ArrowRight className="h-4 w-4" /></Button>
+                        </div>
+                        <div className="mt-3 flex items-center justify-center gap-2">
+                          <Button variant="success" onClick={exportFlashcardsToNote}><FileText className="h-4 w-4" /> Export to Notes</Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+        </main>
+
+        {sidebarTab !== "notes" && (
+          <aside className="col-span-12 md:col-span-3 flex flex-col gap-4">
+            <Card title="Body‑Double Rooms" action={<Button variant="subtle"><Users className="h-4 w-4" /> New Room</Button>}>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">ECON study sprint</div>
+                    <div className="text-xs text-zinc-600">2/4 joined • starts 3:30 pm</div>
+                  </div>
+                  <Button variant="subtle">Join</Button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">Quiet writing room</div>
+                    <div className="text-xs text-zinc-600">Open now</div>
+                  </div>
+                  <Button variant="subtle">Enter</Button>
+                </div>
+              </div>
+            </Card>
+            <Card title="Calendar Sync" action={<Chip><CalendarDays className="h-3.5 w-3.5 mr-1" /> 2‑way</Chip>}>
+              <div className="text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span>Google Calendar</span>
+                  <Button variant="success">Connected</Button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Canvas</span>
+                  <Button variant="subtle">Connect</Button>
+                </div>
+              </div>
+            </Card>
+          </aside>
+        )}
+      </div>
+
+      <footer className="border-t border-zinc-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between text-xs text-zinc-600">
+          <div>Session: 2 blocks • 38 min focused • 3 steps done</div>
+          <div className="flex items-center gap-2">
+            <Chip><Timer className="h-3.5 w-3.5 mr-1" /> Tempo</Chip>
+            <Chip><Zap className="h-3.5 w-3.5 mr-1" /> Scope Shaper</Chip>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function NoteEditor({ noteTextRef, value, onKeyDown, onChange }) {
+  return (
+    <textarea
+      ref={noteTextRef}
+      value={value}
+      onKeyDown={onKeyDown}
+      onChange={onChange}
+      placeholder="Type your notes… • Enter continues lists • Tab/Shift+Tab to indent • Backspace removes token"
+      className="min-h[240px] md:min-h-[300px] w-full rounded-2xl border border-zinc-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+    />
+  );
+}
