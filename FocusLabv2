@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { CalendarDays, CheckCircle2, ChevronRight, Clock, Inbox, ListChecks, Mic, Pause, Play, Sparkles, Timer, Zap, Plus, Search, Users, X, LayoutDashboard, FileText, Trash2, Save, Bold, Italic, List as ListIcon, ListOrdered, CheckSquare, Heading1, Heading2, Quote, Target, Upload, BookOpen, ArrowLeft, ArrowRight, Shuffle } from "lucide-react";
 
 const Chip = ({ children }) => (
@@ -171,6 +171,26 @@ export default function ADHDWorkspaceMock() {
   const mediaStreamRef = useRef(null);
   const chunksRef = useRef([]);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (recRef.current) {
+        clearInterval(recRef.current);
+        recRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
 
   const startRecording = async () => {
     if (isRecording) return;
@@ -551,6 +571,14 @@ export default function ADHDWorkspaceMock() {
   const [flashcards, setFlashcards] = useState([]);
   const [flashIndex, setFlashIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (lastAudioURL) {
+        URL.revokeObjectURL(lastAudioURL);
+      }
+    };
+  }, [lastAudioURL]);
 
   const generateFlashcardsFromText = (txt) => {
     const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
